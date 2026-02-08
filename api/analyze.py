@@ -309,43 +309,43 @@ def analyze_ticker(ticker: str) -> dict:
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
-        content_length = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(content_length)
-
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-
         try:
-            data = json.loads(body) if body else {}
-        except json.JSONDecodeError:
-            data = {}
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
 
-        ticker = (data.get("ticker") or "").strip().upper()
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                data = {}
 
-        if not ticker:
-            self._respond(400, {"error": "Ticker symbol is required."})
-            return
+            ticker = (data.get("ticker") or "").strip().upper()
 
-        if len(ticker) > 10 or not ticker.isalpha():
-            self._respond(400, {"error": f"Invalid ticker symbol: '{ticker}'."})
-            return
+            if not ticker:
+                self._respond(400, {"error": "Ticker symbol is required."})
+                return
 
-        warning = None
-        if not is_likely_2x_leveraged(ticker):
-            warning = (f"'{ticker}' is not recognized as a 2x leveraged ETF. "
-                       "Results are shown for informational purposes. "
-                       "This framework is designed for daily 2x leveraged instruments.")
+            if len(ticker) > 10 or not ticker.isalpha():
+                self._respond(400, {"error": f"Invalid ticker symbol: '{ticker}'."})
+                return
 
-        try:
-            result = analyze_ticker(ticker)
-            result["warning"] = warning
-            self._respond(200, result)
-        except ValueError as exc:
-            self._respond(400, {"error": str(exc)})
-        except Exception:
+            warning = None
+            if not is_likely_2x_leveraged(ticker):
+                warning = (f"'{ticker}' is not recognized as a 2x leveraged ETF. "
+                           "Results are shown for informational purposes. "
+                           "This framework is designed for daily 2x leveraged instruments.")
+
+            try:
+                result = analyze_ticker(ticker)
+                result["warning"] = warning
+                self._respond(200, result)
+            except ValueError as exc:
+                self._respond(400, {"error": str(exc)})
+            except Exception:
+                traceback.print_exc()
+                self._respond(500, {"error": "Failed to fetch or analyze data. Please check the ticker and try again."})
+        except Exception as exc:
             traceback.print_exc()
-            self._respond(500, {"error": "Failed to fetch or analyze data. Please check the ticker and try again."})
+            self._respond(500, {"error": f"Internal server error: {str(exc)}"})
 
     def do_OPTIONS(self):
         self.send_response(204)

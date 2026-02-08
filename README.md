@@ -19,14 +19,11 @@ vercel login
 vercel --prod
 ```
 
-### Option 3: GitHub Actions (auto-deploy on push)
+### Option 3: Vercel GitHub Integration (auto-deploy on push)
 
-1. Create a Vercel project: `vercel` (first-time setup)
-2. Add these secrets to your GitHub repo (Settings → Secrets):
-   - `VERCEL_TOKEN` — from https://vercel.com/account/tokens
-   - `VERCEL_ORG_ID` — from `.vercel/project.json`
-   - `VERCEL_PROJECT_ID` — from `.vercel/project.json`
-3. Push to `main` — deploys automatically
+1. Go to [vercel.com/new](https://vercel.com/new) and import the GitHub repo
+2. Vercel auto-detects `vercel.json` and configures everything
+3. Every push to `main` triggers an automatic production deployment
 
 ## Run Locally
 

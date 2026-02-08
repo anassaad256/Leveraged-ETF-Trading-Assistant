@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Leveraged ETF Trading Assistant</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .mono { font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; }
+    .quintile-bar { transition: all 0.3s ease; }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 8px rgba(59,130,246,0.5); }
+      50% { box-shadow: 0 0 20px rgba(59,130,246,0.8); }
+    }
+    .price-marker { animation: pulse-glow 2s infinite; }
+    .fade-in { animation: fadeIn 0.4s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 bg-gray-950/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-bold tracking-tight">Leveraged ETF Trading Assistant</h1>
+        <p class="text-xs text-gray-500 mt-0.5">Crash-aware quintile mean-reversion framework</p>
+      </div>
+      <span class="text-xs text-gray-600 mono">2× Daily ETFs</span>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="max-w-5xl mx-auto px-4 py-8">
+
+    <!-- Input Section -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 mb-8">
+      <label for="ticker-input" class="block text-sm font-medium text-gray-400 mb-2">
+        Enter 2× Leveraged ETF Ticker
+      </label>
+      <div class="flex gap-3">
+        <input
+          id="ticker-input"
+          type="text"
+          placeholder="e.g. TQQQ, SOXL, SSO, QLD"
+          maxlength="10"
+          class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-lg mono
+                 uppercase placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500
+                 focus:border-transparent"
+        />
+        <button
+          id="analyze-btn"
+          onclick="runAnalysis()"
+          class="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500
+                 text-white font-semibold px-8 py-3 rounded-lg transition-colors"
+        >
+          Analyze
+        </button>
+      </div>
+      <div id="warning-bar" class="hidden mt-3 bg-yellow-900/40 border border-yellow-700/50 rounded-lg px-4 py-2 text-yellow-300 text-sm"></div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading" class="hidden text-center py-16">
+      <div class="inline-block w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      <p class="mt-3 text-gray-400 text-sm">Fetching data and running analysis…</p>
+    </div>
+
+    <!-- Error -->
+    <div id="error-box" class="hidden bg-red-900/30 border border-red-700/50 rounded-xl p-6 mb-8">
+      <p class="text-red-300 font-medium" id="error-msg"></p>
+    </div>
+
+    <!-- Results -->
+    <div id="results" class="hidden space-y-6 fade-in">
+
+      <!-- Ticker Header -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-2xl font-bold mono" id="res-ticker"></h2>
+            <p class="text-gray-500 text-sm mt-1" id="res-not-2x"></p>
+          </div>
+          <div id="res-badge" class="text-lg font-bold px-5 py-2 rounded-lg"></div>
+        </div>
+      </div>
+
+      <!-- Reference Window -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Reference Window</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+          <div>
+            <span class="text-gray-500">Type</span>
+            <p class="font-medium mt-1" id="res-window-type"></p>
+          </div>
+          <div>
+            <span class="text-gray-500">Period</span>
+            <p class="font-medium mt-1" id="res-window-period"></p>
+          </div>
+          <div>
+            <span class="text-gray-500">Crash Detected</span>
+            <p class="font-medium mt-1" id="res-crash"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quintile Visualization -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Quintile Structure</h3>
+        <div id="quintile-chart" class="mb-4"></div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-sm mono" id="quintile-table"></div>
+      </div>
+
+      <!-- Current Status -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Current Status</h3>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+          <div>
+            <span class="text-gray-500">Price</span>
+            <p class="text-xl font-bold mono mt-1" id="res-price"></p>
+          </div>
+          <div>
+            <span class="text-gray-500">Position</span>
+            <p class="font-medium mt-1" id="res-position"></p>
+          </div>
+          <div>
+            <span class="text-gray-500">Ref High</span>
+            <p class="font-medium mono mt-1" id="res-ref-high"></p>
+          </div>
+          <div>
+            <span class="text-gray-500">Ref Low</span>
+            <p class="font-medium mono mt-1" id="res-ref-low"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Buy Assessment -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Buy Assessment</h3>
+        <div class="flex items-start gap-4">
+          <span id="buy-badge" class="font-bold px-3 py-1 rounded text-sm shrink-0"></span>
+          <p class="text-sm text-gray-300" id="buy-status"></p>
+        </div>
+        <div id="entry-plan" class="hidden mt-4 bg-gray-800/50 rounded-lg p-4">
+          <h4 class="text-xs font-semibold text-gray-400 uppercase mb-3">Staggered Entry Plan</h4>
+          <div class="grid grid-cols-3 gap-4 text-sm mono" id="entry-prices"></div>
+        </div>
+      </div>
+
+      <!-- Exit Zones -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Exit Zones</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+          <div class="bg-yellow-900/20 border border-yellow-800/30 rounded-lg p-3">
+            <span class="text-yellow-400 text-xs font-semibold">PARTIAL EXIT</span>
+            <p class="mono text-lg font-bold mt-1" id="exit-partial"></p>
+            <p class="text-xs text-gray-500">Early 3rd Quintile</p>
+          </div>
+          <div class="bg-orange-900/20 border border-orange-800/30 rounded-lg p-3">
+            <span class="text-orange-400 text-xs font-semibold">FULL EXIT</span>
+            <p class="mono text-lg font-bold mt-1" id="exit-full"></p>
+            <p class="text-xs text-gray-500">Early 4th Quintile</p>
+          </div>
+          <div class="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
+            <span class="text-red-400 text-xs font-semibold">STRONG EXIT</span>
+            <p class="mono text-lg font-bold mt-1" id="exit-strong"></p>
+            <p class="text-xs text-gray-500">5th Quintile</p>
+          </div>
+        </div>
+        <p class="text-sm text-gray-400 mt-4" id="exit-note"></p>
+      </div>
+
+      <!-- Primary Risk -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Primary Risk</h3>
+        <p class="text-sm text-gray-300 leading-relaxed" id="res-risk"></p>
+      </div>
+
+      <!-- Summary -->
+      <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">Summary</h3>
+        <p class="text-gray-300 leading-relaxed" id="res-summary"></p>
+        <div class="mt-4 pt-4 border-t border-gray-800 flex items-center justify-between">
+          <span class="text-sm text-gray-500 uppercase tracking-wider">Final Recommendation</span>
+          <span id="final-badge" class="text-xl font-bold px-5 py-2 rounded-lg"></span>
+        </div>
+      </div>
+
+      <!-- Disclaimer -->
+      <p class="text-xs text-gray-600 text-center py-4">
+        This tool is for informational and educational purposes only. It does not constitute financial advice.
+        Leveraged ETFs carry substantial risk. Always do your own research.
+      </p>
+    </div>
+  </main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function setBadge(el, text, rec) {
+  el.textContent = text;
+  el.className = 'font-bold px-5 py-2 rounded-lg text-lg';
+  if (rec === 'BUY') el.className += ' bg-green-900/50 text-green-400 border border-green-700/50';
+  else if (rec === 'SELL') el.className += ' bg-red-900/50 text-red-400 border border-red-700/50';
+  else if (rec === 'PARTIAL SELL') el.className += ' bg-orange-900/50 text-orange-400 border border-orange-700/50';
+  else el.className += ' bg-gray-800 text-gray-400 border border-gray-700';
+}
+
+function setSmallBadge(el, text, rec) {
+  el.textContent = text;
+  el.className = 'font-bold px-3 py-1 rounded text-sm shrink-0';
+  if (rec === 'BUY') el.className += ' bg-green-900/50 text-green-400';
+  else if (rec === 'SELL' || rec === 'PARTIAL SELL') el.className += ' bg-red-900/50 text-red-400';
+  else el.className += ' bg-gray-800 text-gray-400';
+}
+
+function buildQuintileChart(quintiles, currentPrice, refHigh, refLow) {
+  const container = $('quintile-chart');
+  const labels = ['5th — Stretched','4th — Expensive','3rd — Neutral','2nd — Below Avg','1st — Cheapest'];
+  const colors = ['#991b1b','#c2410c','#a16207','#1d4ed8','#15803d'];
+  const bgColors = ['rgba(153,27,27,0.3)','rgba(194,65,12,0.3)','rgba(161,98,7,0.3)','rgba(29,78,237,0.25)','rgba(21,128,61,0.3)'];
+
+  const q = quintiles.quintiles;
+  const allLow = q[1].lower;
+  const allHigh = q[5].upper;
+  const range = allHigh - allLow;
+  const extLow = Math.min(allLow, currentPrice) - range * 0.05;
+  const extHigh = Math.max(allHigh, currentPrice) + range * 0.05;
+  const fullRange = extHigh - extLow;
+
+  let html = '<div class="relative" style="height: 260px;">';
+
+  // Quintile bands (draw from top: 5th down to 1st)
+  for (let i = 5; i >= 1; i--) {
+    const lo = q[i].lower;
+    const hi = q[i].upper;
+    const bottom = ((lo - extLow) / fullRange) * 100;
+    const height = ((hi - lo) / fullRange) * 100;
+    const idx = 5 - i;
+    html += `<div class="absolute left-20 right-4 rounded quintile-bar flex items-center px-3"
+                  style="bottom:${bottom}%;height:${height}%;background:${bgColors[idx]};border:1px solid ${colors[idx]}40;">
+               <span class="text-xs font-medium" style="color:${colors[idx]}">${labels[idx]}</span>
+               <span class="text-xs mono ml-auto" style="color:${colors[idx]}80">$${lo.toFixed(2)} — $${hi.toFixed(2)}</span>
+             </div>`;
+  }
+
+  // Current price marker
+  const pricePos = ((currentPrice - extLow) / fullRange) * 100;
+  html += `<div class="absolute left-0 right-0 flex items-center" style="bottom:${pricePos}%;">
+             <span class="text-xs mono font-bold text-blue-400 w-20 text-right pr-2">$${currentPrice.toFixed(2)}</span>
+             <div class="flex-1 h-0.5 bg-blue-500 price-marker rounded"></div>
+             <span class="text-xs text-blue-400 pl-2">◀ Current</span>
+           </div>`;
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function renderResults(data) {
+  // Ticker + badge
+  $('res-ticker').textContent = data.ticker;
+  $('res-not-2x').textContent = data.warning || '';
+  $('res-not-2x').classList.toggle('hidden', !data.warning);
+  setBadge($('res-badge'), data.summary.final_recommendation, data.summary.final_recommendation);
+
+  // Reference window
+  $('res-window-type').textContent = data.reference_window.type;
+  $('res-window-period').textContent = `${data.reference_window.start_date} to ${data.reference_window.end_date}`;
+  const crashEl = $('res-crash');
+  if (data.reference_window.crash_detected) {
+    crashEl.innerHTML = `<span class="text-red-400 font-semibold">Yes</span> — started ${data.reference_window.crash_start_date}`;
+  } else {
+    crashEl.innerHTML = '<span class="text-green-400">No</span>';
+  }
+
+  // Quintile chart
+  buildQuintileChart(data.quintiles, data.current_status.current_price,
+                     data.quintiles.ref_high, data.quintiles.ref_low);
+
+  // Quintile table
+  const qt = $('quintile-table');
+  const qLabels = {5:'5th (Stretched)',4:'4th (Expensive)',3:'3rd (Neutral)',2:'2nd (Below Avg)',1:'1st (Cheapest)'};
+  qt.innerHTML = '';
+  for (let i = 5; i >= 1; i--) {
+    const q = data.quintiles.quintiles[i];
+    qt.innerHTML += `<div class="flex justify-between py-1 border-b border-gray-800">
+      <span class="text-gray-400">${qLabels[i]}</span>
+      <span>$${q.lower.toFixed(2)} — $${q.upper.toFixed(2)}</span>
+    </div>`;
+  }
+
+  // Current status
+  $('res-price').textContent = `$${data.current_status.current_price.toFixed(2)}`;
+  $('res-position').textContent = data.current_status.position;
+  $('res-ref-high').textContent = `$${data.current_status.ref_high.toFixed(2)}`;
+  $('res-ref-low').textContent = `$${data.current_status.ref_low.toFixed(2)}`;
+
+  // Buy assessment
+  const buyRec = data.buy_assessment.recommendation;
+  setSmallBadge($('buy-badge'), buyRec, buyRec);
+  $('buy-status').textContent = data.buy_assessment.status;
+
+  const ep = $('entry-plan');
+  if (data.buy_assessment.entry_plan) {
+    ep.classList.remove('hidden');
+    const p = data.buy_assessment.entry_plan;
+    $('entry-prices').innerHTML = `
+      <div><span class="text-gray-500 text-xs block">Upper 1st Q</span><span class="text-green-400 text-lg">$${p.upper_1st.toFixed(2)}</span></div>
+      <div><span class="text-gray-500 text-xs block">Mid 1st Q</span><span class="text-green-400 text-lg">$${p.mid_1st.toFixed(2)}</span></div>
+      <div><span class="text-gray-500 text-xs block">Lower 1st Q</span><span class="text-green-400 text-lg">$${p.lower_1st.toFixed(2)}</span></div>`;
+  } else {
+    ep.classList.add('hidden');
+  }
+
+  // Exit zones
+  $('exit-partial').textContent = `$${data.exit_assessment.exit_zones.partial_exit.toFixed(2)}`;
+  $('exit-full').textContent = `$${data.exit_assessment.exit_zones.full_exit.toFixed(2)}`;
+  $('exit-strong').textContent = `$${data.exit_assessment.exit_zones.strong_exit.toFixed(2)}`;
+  $('exit-note').textContent = data.exit_assessment.exit_note;
+
+  // Risk
+  $('res-risk').textContent = data.primary_risk;
+
+  // Summary
+  $('res-summary').textContent = data.summary.text;
+  setBadge($('final-badge'), data.summary.final_recommendation, data.summary.final_recommendation);
+}
+
+async function runAnalysis() {
+  const ticker = $('ticker-input').value.trim().toUpperCase();
+  if (!ticker) { $('ticker-input').focus(); return; }
+
+  $('loading').classList.remove('hidden');
+  $('results').classList.add('hidden');
+  $('error-box').classList.add('hidden');
+  $('warning-bar').classList.add('hidden');
+  $('analyze-btn').disabled = true;
+
+  try {
+    const resp = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker }),
+    });
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      throw new Error(data.error || 'Analysis failed.');
+    }
+
+    if (data.warning) {
+      $('warning-bar').textContent = data.warning;
+      $('warning-bar').classList.remove('hidden');
+    }
+
+    renderResults(data);
+    $('results').classList.remove('hidden');
+  } catch (err) {
+    $('error-msg').textContent = err.message;
+    $('error-box').classList.remove('hidden');
+  } finally {
+    $('loading').classList.add('hidden');
+    $('analyze-btn').disabled = false;
+  }
+}
+
+// Enter key triggers analysis
+$('ticker-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') runAnalysis();
+});
+</script>
+</body>
+</html>

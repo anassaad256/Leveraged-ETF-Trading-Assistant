@@ -1,49 +1,122 @@
 # Leveraged ETF Trading Assistant
 
-A crash-aware, quintile mean-reversion trading framework for daily 2× leveraged ETFs.
+Crash-aware, pre-crash 6-month quintile mean-reversion analysis for **long-only 2×/3× leveraged ETFs**.
 
-## Quick Deploy to Vercel (Recommended)
+Built with Next.js 14 (React frontend + API routes), deployable to Vercel in one click.
 
-### Option 1: One-Click Deploy
+## Quick Deploy
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/anassaad256/Leveraged-ETF-Trading-Assistant)
 
-### Option 2: CLI Deploy
-
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Login and deploy
-vercel login
-vercel --prod
-```
-
-### Option 3: Vercel GitHub Integration (auto-deploy on push)
-
-1. Go to [vercel.com/new](https://vercel.com/new) and import the GitHub repo
-2. Vercel auto-detects `vercel.json` and configures everything
-3. Every push to `main` triggers an automatic production deployment
+No environment variables required — defaults to Yahoo Finance (no API key needed).
 
 ## Run Locally
 
 ```bash
-pip install -r requirements.txt
-python3 run.py
-# Open http://localhost:5000
+git clone https://github.com/anassaad256/Leveraged-ETF-Trading-Assistant.git
+cd Leveraged-ETF-Trading-Assistant
+npm install
+npm run dev
+# Open http://localhost:3000
 ```
 
-## How It Works
+## Run Tests
 
-1. **Data Acquisition** — Fetches 14 months of adjusted close prices via yfinance
-2. **Crash Detection** — Identifies crash regimes via peak-to-trough decline, expanding volatility, or rapid acceleration
-3. **Reference Window** — Uses rolling 6-month window, or freezes to pre-crash period if crash detected
-4. **Quintile Construction** — Divides reference range into 5 equal bands
-5. **Buy/Sell Logic** — Rules-based recommendations with staggered entry plans and exit zones
+```bash
+npm test
+```
 
-## Key Rules
+31 unit tests covering crash detection, quintile construction, status labeling, entry/exit logic, and full pipeline integration.
 
-- Never recommends buying above 2nd quintile
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_PROVIDER` | `yahoo` | `yahoo` (no key) or `tiingo` (needs key) |
+| `TIINGO_API_KEY` | — | Required only if `DATA_PROVIDER=tiingo` |
+| `CACHE_TTL` | `900` | Cache duration in seconds (15 min default) |
+
+## API
+
+### `GET /api/analyze?symbol=TQQQ`
+
+Returns JSON with the full analysis:
+
+```json
+{
+  "symbol": "TQQQ",
+  "asOfDate": "2026-02-07",
+  "dataProvider": "Yahoo Finance",
+  "crashDetected": false,
+  "crashOnsetDate": null,
+  "referenceWindow": {
+    "type": "rolling_6m",
+    "start": "2025-08-07",
+    "end": "2026-02-07",
+    "refHigh": 85.50,
+    "refLow": 62.30,
+    "tradingDays": 126
+  },
+  "currentPrice": 72.10,
+  "quintiles": [
+    { "name": "Q1", "label": "Cheapest", "low": 62.30, "high": 66.94 },
+    { "name": "Q2", "label": "Below Average", "low": 66.94, "high": 71.58 },
+    { "name": "Q3", "label": "Neutral", "low": 71.58, "high": 76.22 },
+    { "name": "Q4", "label": "Expensive", "low": 76.22, "high": 80.86 },
+    { "name": "Q5", "label": "Stretched", "low": 80.86, "high": 85.50 }
+  ],
+  "currentQuintile": "Q3",
+  "status": "inside Q3",
+  "bestBuyAssessment": {
+    "action": "WAIT",
+    "bestBuyZone": "Q1",
+    "note": "Price is in Q3 — well above optimal entry..."
+  },
+  "staggeredEntryPlan": [
+    { "tranche": "Upper Q1", "priceRange": [64.62, 66.94] },
+    { "tranche": "Mid Q1", "priceRange": [62.30, 64.62] },
+    { "tranche": "Lower Q1 / Overshoot", "priceRange": [59.19, 62.30] }
+  ],
+  "exitZones": { ... },
+  "primaryRisk": ["..."],
+  "summary": { "action": "PARTIAL_SELL", "text": "..." }
+}
+```
+
+## Methodology
+
+1. **Data**: Daily adjusted close, ≥12 months via Yahoo Finance or Tiingo
+2. **Crash detection** (deterministic):
+   - Rolling 30-day peak-to-trough drawdown ≤ −15%, OR
+   - (10-day RV / 30-day RV > 1.3) AND (≥3 days with return ≤ −2.5% in last 10 days)
+3. **Reference window**: 6 calendar months ending before crash onset (if crash) or at analysis date (if no crash)
+4. **Quintiles**: 5 equal bands from reference low to reference high (Q1 cheapest → Q5 stretched)
+5. **Entry**: Buy only in Q1 or below; staggered 3-tranche plan; never buy above Q2
+6. **Exit**: Partial at early Q3, full at early Q4, strongly discourage Q5. Exit rules override entry rules.
+7. **Risk**: Always warns about volatility decay and path dependence
+
+## Architecture
+
+```
+src/
+├── app/
+│   ├── layout.js           # Root layout
+│   ├── page.js              # Main UI (client component)
+│   ├── globals.css           # Tailwind + print styles
+│   └── api/analyze/route.js  # GET endpoint
+├── components/
+│   └── ReportCard.js         # Report rendering + copy/print
+└── lib/
+    ├── analysis.js           # Core analysis engine (pure functions)
+    ├── dataProvider.js        # Yahoo Finance + Tiingo fetchers
+    └── cache.js               # In-memory TTL cache
+```
+
+## Rules Enforced
+
+- No inverse ETFs, no shorting
+- Never recommend buy above Q2
+- Never average up
 - Exit rules override entry rules
 - Quintiles never re-anchor downward during crashes
-- Below-1st-quintile prices in crashes are treated as overshoots, not new normals
+- Below-Q1 during crash = overshoot, not new normal
